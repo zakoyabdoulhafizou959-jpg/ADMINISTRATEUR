@@ -3,9 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dubai - Gestion complète</title>
+    <title>Admin Dubai - Gestion complète (AVEC AUTH)</title>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <style>
         * {
             margin: 0;
@@ -50,7 +51,7 @@
         .admin-login button {
             width: 100%;
             padding: 15px;
-            background: #f5a623;
+            background: linear-gradient(135deg, #f5a623, #ffd966);
             border: none;
             border-radius: 30px;
             font-weight: bold;
@@ -130,6 +131,7 @@
             padding: 20px;
             margin-bottom: 15px;
             border-left: 5px solid #ffd966;
+            transition: all 0.3s;
         }
 
         .request-header {
@@ -246,6 +248,17 @@
             font-weight: bold;
         }
 
+        .btn-logout {
+            background: #8b3a3a;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-left: 10px;
+            font-weight: bold;
+        }
+
         .empty-message {
             text-align: center;
             color: #ffefb0;
@@ -258,15 +271,6 @@
             padding: 40px;
         }
 
-        .code-badge {
-            background: #f5a62320;
-            padding: 8px 15px;
-            border-radius: 30px;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #7effdb;
-        }
-
         footer {
             text-align: center;
             margin-top: 30px;
@@ -275,25 +279,18 @@
         }
 
         @media (max-width: 600px) {
-            .stats-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-            .info-grid {
-                grid-template-columns: 1fr;
-            }
-            .request-actions {
-                flex-direction: column;
-            }
-            .btn-approve, .btn-reject {
-                width: 100%;
-            }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+            .info-grid { grid-template-columns: 1fr; }
+            .request-actions { flex-direction: column; }
+            .btn-approve, .btn-reject { width: 100%; }
         }
     </style>
 </head>
 <body>
     <div id="adminLogin" class="admin-login">
         <h2>🔐 Administration Dubai</h2>
-        <input type="password" id="adminPassword" placeholder="Mot de passe administrateur">
+        <input type="email" id="adminEmail" placeholder="Email administrateur" value="admin@gmail.com">
+        <input type="password" id="adminPassword" placeholder="Mot de passe">
         <button onclick="loginAdmin()">Se connecter</button>
         <div id="loginError" style="color:#ff8a7a; margin-top:15px"></div>
     </div>
@@ -301,7 +298,8 @@
     <div id="adminPanel" class="admin-panel">
         <div class="header">
             <h1>🎰 DUBAI MAGIC - Administration</h1>
-            <p>Gestion des dépôts et retraits - Codes d'envoi visibles</p>
+            <p>Gestion des dépôts et retraits - AVEC AUTHENTIFICATION FIREBASE ✅</p>
+            <button class="btn-logout" onclick="logoutAdmin()" style="margin-top:10px">🚪 Déconnexion</button>
         </div>
 
         <div class="stats-grid">
@@ -314,118 +312,239 @@
         <div class="tabs">
             <button class="tab-btn active" onclick="showTab('deposits', this)">💰 DÉPÔTS EN ATTENTE</button>
             <button class="tab-btn" onclick="showTab('withdraws', this)">💸 RETRAITS EN ATTENTE</button>
-            <button class="tab-btn" onclick="showTab('history', this)">📜 HISTORIQUE</button>
             <button class="tab-btn" onclick="showTab('users', this)">👥 UTILISATEURS</button>
+            <button class="tab-btn" onclick="showTab('createUser', this)">➕ CRÉER UTILISATEUR</button>
         </div>
 
         <div id="depositsTab" class="tab-container">
-            <button class="btn-refresh" onclick="loadDeposits()">🔄 Rafraîchir</button>
+            <button class="btn-refresh" onclick="refreshData()">🔄 Rafraîchir</button>
             <div id="depositsList"><div class="loading">Chargement des dépôts...</div></div>
         </div>
 
         <div id="withdrawsTab" class="tab-container" style="display:none">
-            <button class="btn-refresh" onclick="loadWithdraws()">🔄 Rafraîchir</button>
+            <button class="btn-refresh" onclick="refreshData()">🔄 Rafraîchir</button>
             <div id="withdrawsList"><div class="loading">Chargement des retraits...</div></div>
-        </div>
-
-        <div id="historyTab" class="tab-container" style="display:none">
-            <div id="historyList"><div class="loading">Chargement de l'historique...</div></div>
         </div>
 
         <div id="usersTab" class="tab-container" style="display:none">
             <div id="usersList"><div class="loading">Chargement des utilisateurs...</div></div>
         </div>
 
-        <footer>⚡ Codes d'envoi Amanata affichés pour chaque transaction</footer>
+        <div id="createUserTab" class="tab-container" style="display:none">
+            <div class="request-card">
+                <h3 style="color:#ffd966; margin-bottom:20px">➕ Créer un nouvel utilisateur</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">👤 NOM D'UTILISATEUR</span>
+                        <input type="text" id="newUserName" class="transfer-code-input" placeholder="ex: Jean123" style="background:#2c1e12;">
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">📞 TÉLÉPHONE</span>
+                        <input type="text" id="newUserPhone" class="transfer-code-input" placeholder="ex: 98790361" style="background:#2c1e12;">
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">💰 SOLDE INITIAL</span>
+                        <input type="number" id="newUserBalance" class="transfer-code-input" value="2700" style="background:#2c1e12;">
+                    </div>
+                </div>
+                <div class="request-actions">
+                    <button class="btn-approve" onclick="createUser()">✅ CRÉER L'UTILISATEUR</button>
+                </div>
+                <div id="createUserResult" style="margin-top:15px;"></div>
+            </div>
+        </div>
+
+        <footer>⚡ Version corrigée - Firebase Authentication active ✅</footer>
     </div>
+
+    <div id="notification" style="position:fixed; bottom:20px; right:20px; z-index:9999;"></div>
 
     <script>
         const firebaseConfig = {
             apiKey: "AIzaSyCxsXpj3ovdd2Wu5HNHN1Zyvf7qG00aXx4",
             authDomain: "dubai-dbd3f.firebaseapp.com",
+            databaseURL: "https://dubai-dbd3f-default-rtdb.firebaseio.com",
             projectId: "dubai-dbd3f",
             storageBucket: "dubai-dbd3f.firebasestorage.app",
             messagingSenderId: "543622740538",
-            appId: "1:543622740538:web:68ec2428ced2acc2dad303"
+            appId: "1:543622740538:web:0e4e6abf3124a878dad303"
         };
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        
+        const database = firebase.database();
+        const auth = firebase.auth();
+        
         let adminLoggedIn = false;
-        const ADMIN_PASSWORD = "dubai2024";
+        const INITIAL_BALANCE = 2700;
 
-        function loginAdmin() {
+        function showNotification(message, type) {
+            const notification = document.getElementById('notification');
+            notification.innerHTML = `<div style="background:${type === 'success' ? '#2c5a2e' : '#8b3a3a'}; color:white; padding:15px 25px; border-radius:10px; box-shadow:0 3px 10px rgba(0,0,0,0.3);">${message}</div>`;
+            setTimeout(() => notification.innerHTML = '', 4000);
+        }
+
+        // ✅ LOGIN AVEC FIREBASE AUTH
+        async function loginAdmin() {
+            const email = document.getElementById('adminEmail').value;
             const password = document.getElementById('adminPassword').value;
-            if (password === ADMIN_PASSWORD) {
+            
+            if (!email || !password) {
+                document.getElementById('loginError').textContent = '❌ Veuillez entrer email et mot de passe';
+                return;
+            }
+            
+            try {
+                // 🔐 Connexion Firebase
+                await auth.signInWithEmailAndPassword(email, password);
+                
+                adminLoggedIn = true;
+                document.getElementById('adminLogin').style.display = 'none';
+                document.getElementById('adminPanel').style.display = 'block';
+                
+                loadAllData();
+                startRealTimeListeners();
+                
+                showNotification('✅ Connexion admin réussie !', 'success');
+                
+            } catch (error) {
+                console.error(error);
+                let errorMsg = '❌ Erreur de connexion';
+                if (error.code === 'auth/user-not-found') {
+                    errorMsg = '❌ Utilisateur admin non trouvé';
+                } else if (error.code === 'auth/wrong-password') {
+                    errorMsg = '❌ Mot de passe incorrect';
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMsg = '❌ Email invalide';
+                }
+                document.getElementById('loginError').textContent = errorMsg;
+            }
+        }
+        
+        // ✅ DECONNEXION
+        async function logoutAdmin() {
+            await auth.signOut();
+            adminLoggedIn = false;
+            document.getElementById('adminLogin').style.display = 'block';
+            document.getElementById('adminPanel').style.display = 'none';
+            document.getElementById('adminPassword').value = '';
+            showNotification('🔓 Déconnexion réussie', 'success');
+        }
+        
+        // ✅ Vérifier si déjà connecté au chargement
+        auth.onAuthStateChanged((user) => {
+            if (user && !adminLoggedIn) {
+                // Déjà connecté
                 adminLoggedIn = true;
                 document.getElementById('adminLogin').style.display = 'none';
                 document.getElementById('adminPanel').style.display = 'block';
                 loadAllData();
                 startRealTimeListeners();
-            } else {
-                document.getElementById('loginError').textContent = '❌ Mot de passe incorrect';
+                showNotification('✅ Session admin restaurée', 'success');
             }
-        }
+        });
+
+        document.getElementById('adminPassword').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loginAdmin();
+        });
 
         function startRealTimeListeners() {
-            db.collection('depositRequests').onSnapshot(() => { loadDeposits(); updateStats(); });
-            db.collection('withdrawRequests').onSnapshot(() => { loadWithdraws(); updateStats(); });
-            db.collection('users').onSnapshot(() => updateStats());
+            database.ref('deposits').on('value', () => {
+                if (adminLoggedIn) refreshData();
+            });
+            database.ref('withdraws').on('value', () => {
+                if (adminLoggedIn) refreshData();
+            });
+            database.ref('users').on('value', () => {
+                if (adminLoggedIn) {
+                    updateStats();
+                    if (document.getElementById('usersTab').style.display !== 'none') loadUsers();
+                }
+            });
+        }
+
+        async function refreshData() {
+            await updateStats();
+            const activeTab = document.querySelector('.tab-btn.active').textContent;
+            if (activeTab.includes('DÉPÔTS')) await loadDeposits();
+            else if (activeTab.includes('RETRAITS')) await loadWithdraws();
         }
 
         async function updateStats() {
             try {
-                const pendingDeposits = await db.collection('depositRequests').where('status', '==', 'pending').get();
-                const pendingWithdraws = await db.collection('withdrawRequests').where('status', '==', 'pending').get();
-                const users = await db.collection('users').get();
+                const depositsSnap = await database.ref('deposits').once('value');
+                const withdrawsSnap = await database.ref('withdraws').once('value');
+                const usersSnap = await database.ref('users').once('value');
+                
+                let pendingDeposits = 0;
+                const deposits = depositsSnap.val() || {};
+                for (const key in deposits) {
+                    if (deposits[key].status === 'pending') pendingDeposits++;
+                }
+                
+                let pendingWithdraws = 0;
+                const withdraws = withdrawsSnap.val() || {};
+                for (const key in withdraws) {
+                    if (withdraws[key].status === 'pending') pendingWithdraws++;
+                }
+                
+                const users = usersSnap.val() || {};
+                const userCount = Object.keys(users).length;
+                
                 let totalBalance = 0;
-                users.forEach(doc => { totalBalance += doc.data().balance || 0; });
-                document.getElementById('statPendingDeposits').textContent = pendingDeposits.size;
-                document.getElementById('statPendingWithdraws').textContent = pendingWithdraws.size;
-                document.getElementById('statTotalUsers').textContent = users.size;
-                document.getElementById('statTotalBalance').textContent = Math.floor(totalBalance).toLocaleString('fr-FR') + ' FCFA';
+                for (const key in users) {
+                    totalBalance += users[key].balance || 0;
+                }
+                
+                document.getElementById('statPendingDeposits').textContent = pendingDeposits;
+                document.getElementById('statPendingWithdraws').textContent = pendingWithdraws;
+                document.getElementById('statTotalUsers').textContent = userCount;
+                document.getElementById('statTotalBalance').textContent = totalBalance.toLocaleString('fr-FR') + ' FCFA';
             } catch(e) { console.error(e); }
         }
 
-        // ========== DÉPÔTS - AFFICHE LE CODE D'ENVOI ==========
+        // ========== DÉPÔTS ==========
         async function loadDeposits() {
             try {
-                const deposits = await db.collection('depositRequests').where('status', '==', 'pending').get();
+                const snapshot = await database.ref('deposits').once('value');
+                const deposits = snapshot.val() || {};
                 const container = document.getElementById('depositsList');
                 
-                if (deposits.empty) {
+                const items = [];
+                for (const [firebaseId, data] of Object.entries(deposits)) {
+                    if (data.status === 'pending') {
+                        items.push({ firebaseId: firebaseId, ...data });
+                    }
+                }
+                
+                items.sort((a, b) => (b.date || 0) - (a.date || 0));
+                
+                if (items.length === 0) {
                     container.innerHTML = '<div class="empty-message">📭 Aucun dépôt en attente</div>';
                     return;
                 }
                 
-                const items = [];
-                for (const doc of deposits.docs) {
-                    items.push({ id: doc.id, ...doc.data() });
-                }
-                items.sort((a, b) => {
-                    const dateA = a.createdAt?.toDate() || new Date(0);
-                    const dateB = b.createdAt?.toDate() || new Date(0);
-                    return dateB - dateA;
-                });
-                
                 container.innerHTML = '';
                 for (const data of items) {
-                    let userName = data.userName || 'Inconnu';
-                    let userPhone = data.userPhone || 'N/A';
+                    let userName = data.username || 'Inconnu';
+                    let userPhone = data.phone || 'N/A';
                     try {
-                        const userDoc = await db.collection('users').doc(data.userId).get();
-                        if (userDoc.exists) {
-                            userName = userDoc.data().name;
-                            userPhone = userDoc.data().phone;
+                        const userSnap = await database.ref(`users/${data.userId}`).once('value');
+                        if (userSnap.exists()) {
+                            userName = userSnap.val().username || userName;
+                            userPhone = userSnap.val().phone || userPhone;
                         }
                     } catch(e) {}
                     
-                    const date = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : 'N/A';
-                    const idShort = data.id.substring(0, 8).toUpperCase();
+                    const date = data.date ? new Date(data.date).toLocaleString() : 'N/A';
+                    const idShort = data.firebaseId.substring(0, 8);
                     const transferCode = data.transferCode || 'NON FOURNI';
+                    const amount = data.amount || 0;
                     
-                    container.innerHTML += `
-                        <div class="request-card">
+                    container.innerHTML += 
+                        `<div class="request-card" id="deposit_card_${data.firebaseId}">
                             <div class="request-header">
                                 <span class="request-id">🆔 ${idShort}</span>
                                 <span class="status-pending">⏳ EN ATTENTE</span>
@@ -441,11 +560,7 @@
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">💰 MONTANT</span>
-                                    <span class="info-value" style="color:#7effdb; font-size:1.2rem">${(data.amount || 0).toLocaleString('fr-FR')} FCFA</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">🏦 MODE DE PAIEMENT</span>
-                                    <span class="info-value">${data.paymentMethod || 'Amanata'}</span>
+                                    <span class="info-value" style="color:#7effdb">${amount.toLocaleString('fr-FR')} FCFA</span>
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">📅 DATE</span>
@@ -456,11 +571,10 @@
                                 🔑 CODE D'ENVOI : ${escapeHtml(transferCode)}
                             </div>
                             <div class="request-actions">
-                                <button class="btn-approve" onclick="approveDeposit('${data.id}', '${data.userId}', ${data.amount})">✅ VALIDER LE DÉPÔT</button>
-                                <button class="btn-reject" onclick="rejectDeposit('${data.id}')">❌ REJETER</button>
+                                <button class="btn-approve" onclick="approveDeposit('${data.firebaseId}', '${data.userId}', ${amount})">✅ VALIDER LE DÉPÔT</button>
+                                <button class="btn-reject" onclick="rejectDeposit('${data.firebaseId}')">❌ REJETER</button>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 }
             } catch(error) {
                 console.error(error);
@@ -468,72 +582,117 @@
             }
         }
 
-        async function approveDeposit(requestId, userId, amount) {
-            if (!confirm(`✅ Valider le dépôt de ${amount.toLocaleString('fr-FR')} FCFA ?\n\nL'argent sera ajouté au compte.`)) return;
+        window.approveDeposit = async function(firebaseId, userId, amount) {
+            if (!confirm(`✅ VALIDER le dépôt de ${amount.toLocaleString('fr-FR')} FCFA ?`)) return;
+            
             try {
-                const userRef = db.collection('users').doc(userId);
-                const userDoc = await userRef.get();
-                const currentBalance = userDoc.data().balance || 0;
-                await userRef.update({ balance: currentBalance + amount });
-                await db.collection('depositRequests').doc(requestId).update({
+                const requestRef = database.ref(`deposits/${firebaseId}`);
+                const requestSnap = await requestRef.once('value');
+                
+                if (!requestSnap.exists()) {
+                    showNotification('❌ Demande introuvable !', 'error');
+                    await refreshData();
+                    return;
+                }
+                
+                if (requestSnap.val().status !== 'pending') {
+                    showNotification('❌ Cette demande a déjà été traitée !', 'error');
+                    await refreshData();
+                    return;
+                }
+                
+                const userRef = database.ref(`users/${userId}`);
+                const userSnap = await userRef.once('value');
+                const currentBalance = userSnap.val()?.balance || 0;
+                const newBalance = currentBalance + amount;
+                await userRef.update({ balance: newBalance });
+                
+                await requestRef.update({
                     status: 'approved',
-                    processedAt: firebase.firestore.FieldValue.serverTimestamp()
+                    processedAt: new Date().toISOString()
                 });
-                alert(`✅ Dépôt approuvé ! ${amount.toLocaleString('fr-FR')} FCFA ajoutés.`);
-                await loadDeposits();
-                await updateStats();
-            } catch(e) { alert('Erreur: ' + e.message); }
-        }
+                
+                const card = document.getElementById(`deposit_card_${firebaseId}`);
+                if (card) card.style.display = 'none';
+                
+                showNotification(`✅ Dépôt validé ! +${amount.toLocaleString('fr-FR')} FCFA. Nouveau solde: ${newBalance.toLocaleString('fr-FR')} FCFA`, 'success');
+                
+                await refreshData();
+                if (document.getElementById('usersTab').style.display !== 'none') await loadUsers();
+                
+            } catch(e) { 
+                console.error(e);
+                showNotification('❌ Erreur: ' + e.message, 'error');
+            }
+        };
 
-        async function rejectDeposit(requestId) {
-            if (!confirm('❌ Rejeter cette demande ?')) return;
-            await db.collection('depositRequests').doc(requestId).update({
-                status: 'rejected',
-                processedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            alert('✅ Demande rejetée');
-            await loadDeposits();
-            await updateStats();
-        }
+        window.rejectDeposit = async function(firebaseId) {
+            if (!confirm('❌ REJETER cette demande ?')) return;
+            
+            try {
+                const requestRef = database.ref(`deposits/${firebaseId}`);
+                const requestSnap = await requestRef.once('value');
+                
+                if (!requestSnap.exists() || requestSnap.val().status !== 'pending') {
+                    showNotification('❌ Demande déjà traitée ou introuvable', 'error');
+                    await refreshData();
+                    return;
+                }
+                
+                await requestRef.update({
+                    status: 'rejected',
+                    processedAt: new Date().toISOString()
+                });
+                
+                const card = document.getElementById(`deposit_card_${firebaseId}`);
+                if (card) card.style.display = 'none';
+                
+                showNotification('✅ Demande rejetée', 'success');
+                await refreshData();
+            } catch(e) {
+                showNotification('❌ Erreur: ' + e.message, 'error');
+            }
+        };
 
         // ========== RETRAITS ==========
         async function loadWithdraws() {
             try {
-                const withdraws = await db.collection('withdrawRequests').where('status', '==', 'pending').get();
+                const snapshot = await database.ref('withdraws').once('value');
+                const withdraws = snapshot.val() || {};
                 const container = document.getElementById('withdrawsList');
                 
-                if (withdraws.empty) {
+                const items = [];
+                for (const [firebaseId, data] of Object.entries(withdraws)) {
+                    if (data.status === 'pending') {
+                        items.push({ firebaseId: firebaseId, ...data });
+                    }
+                }
+                
+                items.sort((a, b) => (b.date || 0) - (a.date || 0));
+                
+                if (items.length === 0) {
                     container.innerHTML = '<div class="empty-message">📭 Aucun retrait en attente</div>';
                     return;
                 }
                 
-                const items = [];
-                for (const doc of withdraws.docs) {
-                    items.push({ id: doc.id, ...doc.data() });
-                }
-                items.sort((a, b) => {
-                    const dateA = a.createdAt?.toDate() || new Date(0);
-                    const dateB = b.createdAt?.toDate() || new Date(0);
-                    return dateB - dateA;
-                });
-                
                 container.innerHTML = '';
                 for (const data of items) {
-                    let userName = data.userName || 'Inconnu';
-                    let userPhone = data.userPhone || 'N/A';
+                    let userName = data.username || 'Inconnu';
+                    let userPhone = data.phone || 'N/A';
                     try {
-                        const userDoc = await db.collection('users').doc(data.userId).get();
-                        if (userDoc.exists) {
-                            userName = userDoc.data().name;
-                            userPhone = userDoc.data().phone;
+                        const userSnap = await database.ref(`users/${data.userId}`).once('value');
+                        if (userSnap.exists()) {
+                            userName = userSnap.val().username || userName;
+                            userPhone = userSnap.val().phone || userPhone;
                         }
                     } catch(e) {}
                     
-                    const date = data.createdAt ? new Date(data.createdAt.toDate()).toLocaleString() : 'N/A';
-                    const idShort = data.id.substring(0, 8).toUpperCase();
+                    const date = data.date ? new Date(data.date).toLocaleString() : 'N/A';
+                    const idShort = data.firebaseId.substring(0, 8);
+                    const amount = data.amount || 0;
                     
-                    container.innerHTML += `
-                        <div class="request-card">
+                    container.innerHTML += 
+                        `<div class="request-card" id="withdraw_card_${data.firebaseId}">
                             <div class="request-header">
                                 <span class="request-id">🆔 ${idShort}</span>
                                 <span class="status-pending">⏳ EN ATTENTE</span>
@@ -549,15 +708,7 @@
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">💰 MONTANT</span>
-                                    <span class="info-value" style="color:#ffd966">${(data.amount || 0).toLocaleString('fr-FR')} FCFA</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">🏦 MÉTHODE</span>
-                                    <span class="info-value">${data.method || 'Amanata'}</span>
-                                </div>
-                                <div class="info-item">
-                                    <span class="info-label">📱 COMPTE</span>
-                                    <span class="info-value">${escapeHtml(data.account || userPhone)}</span>
+                                    <span class="info-value" style="color:#ffd966">${amount.toLocaleString('fr-FR')} FCFA</span>
                                 </div>
                                 <div class="info-item">
                                     <span class="info-label">📅 DATE</span>
@@ -565,14 +716,13 @@
                                 </div>
                             </div>
                             <div>
-                                <input type="text" id="transferCode_${data.id}" class="transfer-code-input" placeholder="🔑 CODE D'ENVOI (obligatoire - ex: AMA${Math.floor(Math.random()*10000)})" autocomplete="off">
+                                <input type="text" id="transferCode_${data.firebaseId}" class="transfer-code-input" placeholder="🔑 CODE D'ENVOI (obligatoire)" autocomplete="off">
                             </div>
                             <div class="request-actions">
-                                <button class="btn-approve" onclick="approveWithdraw('${data.id}', '${data.userId}', ${data.amount})">✅ VALIDER LE RETRAIT</button>
-                                <button class="btn-reject" onclick="rejectWithdraw('${data.id}')">❌ REJETER</button>
+                                <button class="btn-approve" onclick="approveWithdraw('${data.firebaseId}', '${data.userId}', ${amount})">✅ VALIDER LE RETRAIT</button>
+                                <button class="btn-reject" onclick="rejectWithdraw('${data.firebaseId}')">❌ REJETER</button>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 }
             } catch(error) {
                 console.error(error);
@@ -580,132 +730,193 @@
             }
         }
 
-        async function approveWithdraw(requestId, userId, amount) {
-            const transferCode = document.getElementById(`transferCode_${requestId}`)?.value.trim();
+        window.approveWithdraw = async function(firebaseId, userId, amount) {
+            const transferCode = document.getElementById(`transferCode_${firebaseId}`)?.value.trim();
             if (!transferCode) {
-                alert('⚠️ Veuillez entrer le CODE D\'ENVOI avant de valider le retrait !');
+                showNotification('⚠️ Veuillez entrer le CODE D\'ENVOI !', 'error');
                 return;
             }
             
-            if (!confirm(`✅ Valider le retrait de ${amount.toLocaleString('fr-FR')} FCFA ?\n🔑 Code d'envoi: ${transferCode}`)) return;
+            if (!confirm(`✅ VALIDER le retrait de ${amount.toLocaleString('fr-FR')} FCFA ?\n🔑 Code: ${transferCode}`)) return;
             
             try {
-                const userRef = db.collection('users').doc(userId);
-                const userDoc = await userRef.get();
-                const currentBalance = userDoc.data().balance || 0;
+                const requestRef = database.ref(`withdraws/${firebaseId}`);
+                const requestSnap = await requestRef.once('value');
                 
-                if (currentBalance < amount) {
-                    alert('❌ Solde utilisateur insuffisant !');
+                if (!requestSnap.exists()) {
+                    showNotification('❌ Demande introuvable !', 'error');
+                    await refreshData();
                     return;
                 }
                 
-                await userRef.update({ balance: currentBalance - amount });
-                await db.collection('withdrawRequests').doc(requestId).update({
+                if (requestSnap.val().status !== 'pending') {
+                    showNotification('❌ Cette demande a déjà été traitée !', 'error');
+                    await refreshData();
+                    return;
+                }
+                
+                const userRef = database.ref(`users/${userId}`);
+                const userSnap = await userRef.once('value');
+                const currentBalance = userSnap.val()?.balance || 0;
+                
+                if (currentBalance < amount) {
+                    showNotification('❌ Solde insuffisant !', 'error');
+                    return;
+                }
+                
+                const newBalance = currentBalance - amount;
+                await userRef.update({ balance: newBalance });
+                
+                await requestRef.update({
                     status: 'approved',
-                    processedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    processedAt: new Date().toISOString(),
                     transferCode: transferCode
                 });
                 
-                alert(`✅ Retrait approuvé !\n💰 ${amount.toLocaleString('fr-FR')} FCFA déduits\n🔑 Code d'envoi: ${transferCode}`);
-                await loadWithdraws();
-                await updateStats();
-            } catch(e) { alert('Erreur: ' + e.message); }
-        }
-
-        async function rejectWithdraw(requestId) {
-            if (!confirm('❌ Rejeter cette demande ?')) return;
-            await db.collection('withdrawRequests').doc(requestId).update({
-                status: 'rejected',
-                processedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            alert('✅ Demande rejetée');
-            await loadWithdraws();
-            await updateStats();
-        }
-
-        // ========== HISTORIQUE AVEC CODES ==========
-        async function loadHistory() {
-            try {
-                const deposits = await db.collection('depositRequests').get();
-                const withdraws = await db.collection('withdrawRequests').get();
+                const card = document.getElementById(`withdraw_card_${firebaseId}`);
+                if (card) card.style.display = 'none';
                 
-                const allItems = [];
-                deposits.forEach(doc => {
-                    const data = doc.data();
-                    if (data.status === 'approved' || data.status === 'rejected') {
-                        allItems.push({ type: '💰 DÉPÔT', ...data, id: doc.id });
-                    }
-                });
-                withdraws.forEach(doc => {
-                    const data = doc.data();
-                    if (data.status === 'approved' || data.status === 'rejected') {
-                        allItems.push({ type: '💸 RETRAIT', ...data, id: doc.id });
-                    }
-                });
+                showNotification(`✅ Retrait validé ! -${amount.toLocaleString('fr-FR')} FCFA. Nouveau solde: ${newBalance.toLocaleString('fr-FR')} FCFA`, 'success');
                 
-                allItems.sort((a, b) => {
-                    const dateA = a.processedAt?.toDate() || a.createdAt?.toDate() || new Date(0);
-                    const dateB = b.processedAt?.toDate() || b.createdAt?.toDate() || new Date(0);
-                    return dateB - dateA;
-                });
+                await refreshData();
+                if (document.getElementById('usersTab').style.display !== 'none') await loadUsers();
                 
-                let html = '<h3 style="color:#ffd966; margin-bottom:20px">📜 Dernières transactions avec codes</h3>';
-                if (allItems.length === 0) {
-                    html += '<div class="empty-message">Aucun historique</div>';
-                } else {
-                    allItems.slice(0, 50).forEach(item => {
-                        const date = item.processedAt ? new Date(item.processedAt.toDate()).toLocaleString() : 
-                                   (item.createdAt ? new Date(item.createdAt.toDate()).toLocaleString() : 'N/A');
-                        const statusText = item.status === 'approved' ? '✅ APPROUVÉ' : '❌ REJETÉ';
-                        const statusColor = item.status === 'approved' ? '#7effdb' : '#ff8a7a';
-                        const transferCode = item.transferCode ? `<div style="margin-top:8px; background:#1a1a2e; padding:8px; border-radius:20px;"><span style="color:#ffd966">🔑 CODE D'ENVOI:</span> <span style="font-family:monospace; color:#7effdb">${escapeHtml(item.transferCode)}</span></div>` : '';
-                        
-                        html += `
-                            <div class="request-card">
-                                <div class="request-header">
-                                    <span class="request-id">${item.type}</span>
-                                    <span style="color:${statusColor}">${statusText}</span>
-                                </div>
-                                <div><strong>${escapeHtml(item.userName)}</strong> - ${(item.amount || 0).toLocaleString('fr-FR')} FCFA</div>
-                                ${transferCode}
-                                <div style="font-size:0.8rem; margin-top:8px; opacity:0.7">📅 ${date}</div>
-                            </div>
-                        `;
-                    });
-                }
-                document.getElementById('historyList').innerHTML = html;
             } catch(e) {
-                document.getElementById('historyList').innerHTML = '<div class="empty-message">Erreur: ' + e.message + '</div>';
+                console.error(e);
+                showNotification('❌ Erreur: ' + e.message, 'error');
             }
-        }
+        };
+
+        window.rejectWithdraw = async function(firebaseId) {
+            if (!confirm('❌ REJETER cette demande ?')) return;
+            
+            try {
+                const requestRef = database.ref(`withdraws/${firebaseId}`);
+                const requestSnap = await requestRef.once('value');
+                
+                if (!requestSnap.exists() || requestSnap.val().status !== 'pending') {
+                    showNotification('❌ Demande déjà traitée', 'error');
+                    await refreshData();
+                    return;
+                }
+                
+                await requestRef.update({
+                    status: 'rejected',
+                    processedAt: new Date().toISOString()
+                });
+                
+                const card = document.getElementById(`withdraw_card_${firebaseId}`);
+                if (card) card.style.display = 'none';
+                
+                showNotification('✅ Retrait rejeté', 'success');
+                await refreshData();
+            } catch(e) {
+                showNotification('❌ Erreur: ' + e.message, 'error');
+            }
+        };
 
         // ========== UTILISATEURS ==========
         async function loadUsers() {
             try {
-                const users = await db.collection('users').get();
+                const snapshot = await database.ref('users').once('value');
+                const users = snapshot.val() || {};
+                
                 let html = '<h3 style="color:#ffd966; margin-bottom:20px">👥 Liste des utilisateurs</h3>';
                 
-                users.forEach(doc => {
-                    const data = doc.data();
-                    html += `
-                        <div class="request-card">
-                            <div><strong>${escapeHtml(data.name)}</strong> <span style="color:#ffd966">| ${data.country || 'N/A'}</span></div>
-                            <div>📞 ${escapeHtml(data.phone)}</div>
-                            <div style="color:#7effdb">💰 Solde: ${(data.balance || 0).toLocaleString('fr-FR')} FCFA</div>
-                            <div>🏆 Gains: ${(data.totalGains || 0).toLocaleString('fr-FR')} FCFA | 💔 Pertes: ${(data.totalLosses || 0).toLocaleString('fr-FR')} FCFA</div>
-                            <div>🎮 Parties: ${data.gameCount || 0}</div>
-                        </div>
-                    `;
-                });
-                document.getElementById('usersList').innerHTML = html || '<div class="empty-message">Aucun utilisateur</div>';
+                if (Object.keys(users).length === 0) {
+                    html += '<div class="empty-message">Aucun utilisateur</div>';
+                } else {
+                    for (const [userId, data] of Object.entries(users)) {
+                        html += 
+                            `<div class="request-card">
+                                <div><strong>👤 ${escapeHtml(data.username || data.name || 'Sans nom')}</strong> <span style="color:#ffd966">| ID: ${escapeHtml(userId)}</span></div>
+                                <div>📞 ${escapeHtml(data.phone || 'N/A')}</div>
+                                <div style="color:#7effdb">💰 Solde: ${(data.balance || 0).toLocaleString('fr-FR')} FCFA</div>
+                                <div class="request-actions" style="margin-top:10px;">
+                                    <button class="btn-approve" onclick="addBalanceToUser('${userId}', ${data.balance || 0})">➕ Ajouter du solde</button>
+                                </div>
+                            </div>`;
+                    }
+                }
+                document.getElementById('usersList').innerHTML = html;
             } catch(e) {
                 document.getElementById('usersList').innerHTML = '<div class="empty-message">Erreur: ' + e.message + '</div>';
             }
         }
 
+        window.addBalanceToUser = async function(userId, currentBalance) {
+            const amount = prompt(`Solde actuel: ${currentBalance.toLocaleString('fr-FR')} FCFA\nMontant à AJOUTER:`, "1000");
+            if (!amount) return;
+            
+            const amountNum = parseInt(amount);
+            if (isNaN(amountNum) || amountNum <= 0) {
+                showNotification('Montant invalide !', 'error');
+                return;
+            }
+            
+            try {
+                const newBalance = currentBalance + amountNum;
+                await database.ref(`users/${userId}`).update({ balance: newBalance });
+                showNotification(`✅ +${amountNum.toLocaleString('fr-FR')} FCFA ajoutés ! Nouveau solde: ${newBalance.toLocaleString('fr-FR')} FCFA`, 'success');
+                await loadUsers();
+                await updateStats();
+            } catch(e) {
+                showNotification('❌ Erreur: ' + e.message, 'error');
+            }
+        };
+
+        window.createUser = async function() {
+            const userName = document.getElementById('newUserName').value.trim();
+            const userPhone = document.getElementById('newUserPhone').value.trim();
+            let userBalance = parseInt(document.getElementById('newUserBalance').value);
+            
+            if (!userName) { showNotification('❌ Nom requis', 'error'); return; }
+            if (!userPhone) { showNotification('❌ Téléphone requis', 'error'); return; }
+            if (isNaN(userBalance)) userBalance = INITIAL_BALANCE;
+            
+            try {
+                const usersSnap = await database.ref('users').once('value');
+                const users = usersSnap.val() || {};
+                
+                for (const [id, data] of Object.entries(users)) {
+                    if (data.phone === userPhone) {
+                        showNotification('❌ Ce numéro existe déjà !', 'error');
+                        return;
+                    }
+                    if (data.username === userName || data.name === userName) {
+                        showNotification('❌ Ce nom existe déjà !', 'error');
+                        return;
+                    }
+                }
+                
+                const userId = `user_${Date.now()}`;
+                await database.ref(`users/${userId}`).set({
+                    username: userName,
+                    name: userName,
+                    phone: userPhone,
+                    balance: userBalance,
+                    totalGains: 0,
+                    totalLosses: 0,
+                    gameCount: 0,
+                    createdAt: new Date().toISOString()
+                });
+                
+                showNotification(`✅ Utilisateur "${userName}" créé avec ${userBalance.toLocaleString('fr-FR')} FCFA`, 'success');
+                
+                document.getElementById('newUserName').value = '';
+                document.getElementById('newUserPhone').value = '';
+                document.getElementById('newUserBalance').value = INITIAL_BALANCE;
+                
+                await loadUsers();
+                await updateStats();
+            } catch(e) {
+                showNotification('❌ Erreur: ' + e.message, 'error');
+            }
+        };
+
         function escapeHtml(text) {
             if (!text) return '';
-            return String(text).replace(/[&<>]/g, function(m) {
+            return String(text).replace(/[&<>]/g, (m) => {
                 if (m === '&') return '&amp;';
                 if (m === '<') return '&lt;';
                 if (m === '>') return '&gt;';
@@ -724,12 +935,11 @@
             } else if (tab === 'withdraws') {
                 document.getElementById('withdrawsTab').style.display = 'block';
                 loadWithdraws();
-            } else if (tab === 'history') {
-                document.getElementById('historyTab').style.display = 'block';
-                loadHistory();
             } else if (tab === 'users') {
                 document.getElementById('usersTab').style.display = 'block';
                 loadUsers();
+            } else if (tab === 'createUser') {
+                document.getElementById('createUserTab').style.display = 'block';
             }
         }
 
@@ -737,13 +947,8 @@
             await loadDeposits();
             await loadWithdraws();
             await updateStats();
-            await loadHistory();
             await loadUsers();
         }
-        
-        setInterval(() => {
-            if (adminLoggedIn) updateStats();
-        }, 10000);
     </script>
 </body>
 </html>
